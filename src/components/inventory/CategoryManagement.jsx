@@ -27,8 +27,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import ExcelImportExport from './ExcelImportExport';
 import { showSuccessToast, showSmartToast } from '@/lib/toast-utils';
@@ -42,7 +50,8 @@ import {
   AlertTriangle,
   X,
   FolderPlus,
-  List
+  List,
+  Package
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -116,6 +125,116 @@ function SubcategoryInput({ subcategories, setSubcategories }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Subcategory Form Modal
+function SubcategoryFormModal({ isOpen, onClose, categories, selectedCategory, onCategorySelect, onSubmit, isLoading }) {
+  const [subcategories, setSubcategories] = useState(['']);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    if (!selectedCategory) {
+      return;
+    }
+
+    const validSubcategories = subcategories.filter(sub => sub.trim() !== '');
+
+    if (validSubcategories.length === 0) {
+      return;
+    }
+
+    onSubmit({ subcategories: validSubcategories });
+  };
+
+  const handleClose = () => {
+    setSubcategories(['']);
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader className="text-center space-y-3">
+          <div className="mx-auto w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+            <Package className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          </div>
+          <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            Add Subcategories
+          </DialogTitle>
+          <DialogDescription className="text-gray-600 dark:text-gray-400">
+            Select a category and add new subcategories to it
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="categorySelect" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Select Category *
+              </Label>
+              <Select onValueChange={(value) => {
+                const category = categories.find(cat => cat._id === value);
+                onCategorySelect(category);
+              }} value={selectedCategory?._id || ''}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Choose a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category._id} value={category._id}>
+                      {category.name} ({category.subcategories?.length || 0} subcategories)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedCategory && (
+              <>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                    Existing Subcategories
+                  </Label>
+                  <div className="flex flex-wrap gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-md min-h-[40px]">
+                    {selectedCategory.subcategories?.length > 0 ? (
+                      selectedCategory.subcategories.map((sub, index) => (
+                        <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded text-sm">
+                          {sub}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-gray-500 dark:text-gray-400 text-sm italic">No existing subcategories</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                  <SubcategoryInput subcategories={subcategories} setSubcategories={setSubcategories} />
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClose}
+              className="border-gray-300 dark:border-gray-600"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading || !selectedCategory}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {isLoading ? 'Adding...' : 'Add Subcategories'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -327,7 +446,9 @@ function DeleteConfirmationModal({ isOpen, onClose, onConfirm, title, descriptio
 // Main Category Management Modal
 function CategoryManagementModal({ isOpen, onClose }) {
   const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [showSubcategoryForm, setShowSubcategoryForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
+  const [selectedCategoryForSubcategory, setSelectedCategoryForSubcategory] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, item: null });
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -358,17 +479,19 @@ function CategoryManagementModal({ isOpen, onClose }) {
   });
 
   const updateCategoryMutation = useMutation({
-    mutationFn: ({ id, data }) => apiRequest('PUT', `/api/categories/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries([`${import.meta.env.VITE_API_URL}/api/categories`]);
+    mutationFn: ({ id, data }) => apiRequest('PUT', `${import.meta.env.VITE_API_URL}/api/categories/${id}`, data),
+    onSuccess: (response) => {
+      console.log('Category update success:', response);
+      queryClient.invalidateQueries(['/api/categories']);
       setShowCategoryForm(false);
       setEditingCategory(null);
       toast({
         title: "Success",
-        description: "Category updated successfully",
+        description: response.message || "Category updated successfully",
       });
     },
     onError: (error) => {
+      console.error('Category update error:', error);
       showSmartToast(error, 'Update Category');
     }
   });
@@ -386,10 +509,23 @@ function CategoryManagementModal({ isOpen, onClose }) {
   });
 
   const handleFormSubmit = (data) => {
-    if (editingCategory) {
-      updateCategoryMutation.mutate({ id: editingCategory._id, data });
-    } else {
-      createCategoryMutation.mutate(data);
+    console.log('Submitting category form:', { editingCategory, data });
+
+    try {
+      if (editingCategory) {
+        console.log('Updating category with ID:', editingCategory._id);
+        updateCategoryMutation.mutate({ id: editingCategory._id, data });
+      } else {
+        console.log('Creating new category');
+        createCategoryMutation.mutate(data);
+      }
+    } catch (error) {
+      console.error('Form submit error:', error);
+      toast({
+        title: "Error",
+        description: "Failed to submit form. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -415,8 +551,35 @@ function CategoryManagementModal({ isOpen, onClose }) {
 
   const handleCloseModal = () => {
     setShowCategoryForm(false);
+    setShowSubcategoryForm(false);
     setEditingCategory(null);
+    setSelectedCategoryForSubcategory(null);
     onClose();
+  };
+
+  const handleSubcategorySubmit = (data) => {
+    if (selectedCategoryForSubcategory) {
+      const existingSubcategories = selectedCategoryForSubcategory.subcategories || [];
+      const newSubcategories = [...existingSubcategories, ...data.subcategories];
+
+      updateCategoryMutation.mutate({
+        id: selectedCategoryForSubcategory._id,
+        data: {
+          name: selectedCategoryForSubcategory.name,
+          description: selectedCategoryForSubcategory.description || '',
+          subcategories: newSubcategories
+        }
+      });
+
+      // Close the modal and reset state
+      setShowSubcategoryForm(false);
+      setSelectedCategoryForSubcategory(null);
+    }
+  };
+
+  const handleAddSubcategory = (category) => {
+    setSelectedCategoryForSubcategory(category);
+    setShowSubcategoryForm(true);
   };
 
   return (
@@ -429,7 +592,9 @@ function CategoryManagementModal({ isOpen, onClose }) {
                 <Tag className="h-6 w-6 text-blue-600" />
                 Category Management
               </div>
-
+              <div className="flex items-center gap-2">
+                {/* Excel Import/Export functionality removed */}
+              </div>
             </DialogTitle>
           </DialogHeader>
 
@@ -444,13 +609,23 @@ function CategoryManagementModal({ isOpen, onClose }) {
                   Manage your product categories and subcategories
                 </p>
               </div>
-              <Button
-                onClick={() => setShowCategoryForm(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add New Category
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowCategoryForm(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add New Category
+                </Button>
+                <Button
+                  onClick={() => setShowSubcategoryForm(true)}
+                  variant="outline"
+                  className="border-blue-500 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                >
+                  <Package className="h-4 w-4 mr-2" />
+                  Add Subcategory
+                </Button>
+              </div>
             </div>
 
             {/* Categories List */}
@@ -528,11 +703,20 @@ function CategoryManagementModal({ isOpen, onClose }) {
                                 <Button
                                   size="sm"
                                   variant="ghost"
+                                  onClick={() => handleAddSubcategory(category)}
+                                  className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/30"
+                                  title="Add Subcategory"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
                                   onClick={() => handleEdit(category)}
-                                  className="h-8 w-8 p-0 hover:bg-green-50 dark:hover:bg-green-950/30"
+                                  className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-950/30"
                                   title="Edit Category"
                                 >
-                                  <Edit className="h-4 w-4 text-green-600" />
+                                  <Edit className="h-4 w-4 text-blue-600" />
                                 </Button>
                                 <Button
                                   size="sm"
@@ -568,6 +752,19 @@ function CategoryManagementModal({ isOpen, onClose }) {
         isLoading={createCategoryMutation.isPending || updateCategoryMutation.isPending}
       />
 
+      <SubcategoryFormModal
+        isOpen={showSubcategoryForm}
+        onClose={() => {
+          setShowSubcategoryForm(false);
+          setSelectedCategoryForSubcategory(null);
+        }}
+        categories={categories || []}
+        selectedCategory={selectedCategoryForSubcategory}
+        onCategorySelect={setSelectedCategoryForSubcategory}
+        onSubmit={handleSubcategorySubmit}
+        isLoading={updateCategoryMutation.isPending}
+      />
+
       <DeleteConfirmationModal
         isOpen={deleteConfirm.isOpen}
         onClose={() => setDeleteConfirm({ isOpen: false, item: null })}
@@ -589,7 +786,7 @@ function CustomerCategoryManagementModal({ isOpen, onClose }) {
 
   // Data fetching
   const { data: customerCategoriesData, isLoading } = useQuery({
-    queryKey: [`${import.meta.env.VITE_API_URL}/api/customer-categories`],
+    queryKey: ['/api/customer-categories'],
     enabled: isOpen,
   });
 
@@ -597,9 +794,9 @@ function CustomerCategoryManagementModal({ isOpen, onClose }) {
 
   // Mutations
   const createMutation = useMutation({
-    mutationFn: (data) => apiRequest('POST', `${import.meta.env.VITE_API_URL}/api/customer-categories`, data),
+    mutationFn: (data) => apiRequest('POST', '/api/customer-categories', data),
     onSuccess: () => {
-      queryClient.invalidateQueries([`${import.meta.env.VITE_API_URL}/api/customer-categories`]);
+      queryClient.invalidateQueries(['/api/customer-categories']);
       setShowForm(false);
       setEditingCategory(null);
       showSuccessToast('Success', 'Customer category created successfully');
@@ -610,9 +807,9 @@ function CustomerCategoryManagementModal({ isOpen, onClose }) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => apiRequest('PUT', `${import.meta.env.VITE_API_URL}/api/customer-categories/${id}`, data),
+    mutationFn: ({ id, data }) => apiRequest('PUT', `/api/customer-categories/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries([`${import.meta.env.VITE_API_URL}/api/customer-categories`]);
+      queryClient.invalidateQueries(['/api/customer-categories']);
       setShowForm(false);
       setEditingCategory(null);
       showSuccessToast('Success', 'Customer category updated successfully');
@@ -623,9 +820,9 @@ function CustomerCategoryManagementModal({ isOpen, onClose }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => apiRequest('DELETE', `${import.meta.env.VITE_API_URL}/api/customer-categories/${id}`),
+    mutationFn: (id) => apiRequest('DELETE', `/api/customer-categories/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries([`${import.meta.env.VITE_API_URL}/api/customer-categories`]);
+      queryClient.invalidateQueries(['/api/customer-categories']);
       setDeleteConfirm({ isOpen: false, item: null });
       showSuccessToast('Customer Category Deleted', 'Successfully deleted the customer category');
     },

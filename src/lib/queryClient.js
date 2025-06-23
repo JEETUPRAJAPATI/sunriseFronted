@@ -9,12 +9,12 @@ async function throwIfResNotOk(res) {
 
 export async function apiRequest(method, url, data) {
   const token = localStorage.getItem('token');
-  
-  const headers = { 
+
+  const headers = {
     "Content-Type": "application/json",
     "Accept": "application/json"
   };
-  
+
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -32,11 +32,11 @@ export async function apiRequest(method, url, data) {
 export const getQueryFn = ({ on401 = "throw" }) =>
   async ({ queryKey }) => {
     const token = localStorage.getItem('token');
-    
+
     const headers = {
       "Accept": "application/json"
     };
-    
+
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
